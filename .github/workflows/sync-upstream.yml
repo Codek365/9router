@@ -32,7 +32,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
 
       - name: Rebase fork commits onto upstream
         id: rebase
@@ -55,7 +55,7 @@ jobs:
         if: steps.rebase.outputs.changed == 'true' || inputs.force
         run: |
           set -euo pipefail
-          npm install --ignore-scripts --no-audit --no-fund
+          npm ci --ignore-scripts --no-audit --no-fund
           cd tests && npm install --no-audit --no-fund && npx vitest run unit/anthropic-api-headers.test.js
 
       - name: Push master and retag
