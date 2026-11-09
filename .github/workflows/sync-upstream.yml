@@ -55,7 +55,7 @@ jobs:
         if: steps.rebase.outputs.changed == 'true' || inputs.force
         run: |
           set -euo pipefail
-          npm ci --ignore-scripts --no-audit --no-fund
+          npm install --no-save --ignore-scripts --no-audit --no-fund --no-package-lock undici
           cd tests && npm install --no-audit --no-fund && npx vitest run unit/anthropic-api-headers.test.js
 
       - name: Push master and retag
