@@ -1,7 +1,7 @@
 import { BaseExecutor } from "./base.js";
 import { randomUUID } from "node:crypto";
 import { PROVIDERS, PROVIDER_OAUTH } from "../config/providers.js";
-import { ANTHROPIC_API_VERSION, OPENAI_COMPAT_BASE, ANTHROPIC_COMPAT_BASE, selectAnthropicBeta, mergeAnthropicBeta } from "../providers/shared.js";
+import { ANTHROPIC_API_VERSION, OPENAI_COMPAT_BASE, ANTHROPIC_COMPAT_BASE, selectAnthropicBeta, mergeAnthropicBeta, isAnthropicApiKeyUpstream } from "../providers/shared.js";
 import { resolveOpenAICompatibleApiType } from "../services/provider.js";
 import { OAUTH_ENDPOINTS, buildKimiHeaders, NOUS_ATTRIBUTION } from "../config/appConstants.js";
 import { buildClineHeaders } from "../shared/clineAuth.js";
@@ -238,15 +238,17 @@ export class DefaultExecutor extends BaseExecutor {
       }
     }
 
-    // Strip first-party Claude Code identity headers for non-Anthropic anthropic-compatible upstreams
-    if (this.provider?.startsWith?.("anthropic-compatible-")) {
+    // Strip first-party Claude Code identity headers for non-Anthropic anthropic-compatible
+    // upstreams, and for Anthropic's own API when called with a Console API key
+    const apiKeyToAnthropic = isAnthropicApiKeyUpstream(this.provider, credentials);
+    if (this.provider?.startsWith?.("anthropic-compatible-") || apiKeyToAnthropic) {
       const baseUrl = credentials?.providerSpecificData?.baseUrl || "";
-      const isOfficialAnthropic = baseUrl === "" || baseUrl.includes("api.anthropic.com");
-      if (!isOfficialAnthropic) {
+      const isOfficialAnthropic = baseUrl === "" || baseUrl.toLowerCase().includes("api.anthropic.com");
+      if (!isOfficialAnthropic || apiKeyToAnthropic) {
         // Some third-party Anthropic-compatible gateways require Bearer auth in
         // addition to x-api-key. Send both (x-api-key already set above) so
         // gateways that read either header succeed.
-        if (credentials.apiKey && !headers["Authorization"]) {
+        if (!apiKeyToAnthropic && credentials.apiKey && !headers["Authorization"]) {
           headers["Authorization"] = `Bearer ${credentials.apiKey}`;
         }
         delete headers["anthropic-dangerous-direct-browser-access"];

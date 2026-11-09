@@ -21,6 +21,24 @@ export function mapStainlessArch() {
   }
 }
 
+// True when the request goes to Anthropic's first-party API with a Console API key
+// (not a Claude subscription OAuth token). Anthropic bills such keys as plain API
+// usage; any Claude Code identity marker (the `claude-code-20250219` beta or the
+// "You are Claude Code…" system prompt) reroutes them to Claude Code billing and
+// fails with 400 "Your credit balance is too low", so those markers must be stripped.
+export function isAnthropicApiKeyUpstream(provider, credentials) {
+  const key = credentials?.apiKey;
+  if (!key || credentials?.accessToken || key.includes("sk-ant-oat")) return false;
+  if (provider === "anthropic") return true;
+  if (!provider?.startsWith?.("anthropic-compatible-")) return false;
+  const baseUrl = credentials?.providerSpecificData?.baseUrl || "";
+  try {
+    return new URL(baseUrl).hostname.toLowerCase() === "api.anthropic.com";
+  } catch {
+    return false;
+  }
+}
+
 // Anthropic API version (single source — reused across claude-format providers/executors)
 export const ANTHROPIC_API_VERSION = "2023-06-01";
 // Floor version only; the live value comes from npm (utils/claudeCliVersion.js)

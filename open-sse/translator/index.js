@@ -10,6 +10,8 @@ import { captureSessionId } from "../utils/sessionManager.js";
 import { ensureStreamToolCallIds } from "../utils/streamHelpers.js";
 import { AntigravityExecutor } from "../executors/antigravity.js";
 import { PROVIDERS } from "../providers/index.js";
+import { isAnthropicApiKeyUpstream } from "../providers/shared.js";
+import { CLAUDE_SYSTEM_PROMPT } from "../config/appConstants.js";
 import { ROLE, GEMINI_ROLE } from "./schema/roles.js";
 
 // Registry for translators. Lazy-init guards against circular-import order:
@@ -153,6 +155,12 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
     const apiKey = credentials?.accessToken || credentials?.apiKey || null;
     result = prepareClaudeRequest(result, provider, apiKey, connectionId, credentials?.rawHeaders, clientSessionId);
     if (Array.isArray(result?.messages)) result.messages = ensureTrailingUserTurn(result.messages, clientLastRole);
+    // Console API keys on api.anthropic.com: drop the Claude Code identity prompt
+    // (see isAnthropicApiKeyUpstream) so the call is billed as plain API usage.
+    if (isAnthropicApiKeyUpstream(provider, credentials) && Array.isArray(result?.system)) {
+      result.system = result.system.filter(b => b?.text !== CLAUDE_SYSTEM_PROMPT);
+      if (result.system.length === 0) delete result.system;
+    }
   }
 
   // Claude cloaking: rename client tools with CLAUDE_TOOL_SUFFIX (anti-ban)
