@@ -1,0 +1,67 @@
+# Fork-only: keep this fork = decolua/9router master + local fix commits,
+# then retag v<version> so docker-publish.yml rebuilds ghcr.io/<owner>/9router.
+# Needs secret SYNC_TOKEN (PAT with repo + workflow scopes) so pushes can carry
+# upstream workflow changes and the tag push triggers docker-publish.yml.
+name: Sync upstream and rebuild image
+
+on:
+  schedule:
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Retag and rebuild even if upstream has no new commits"
+        type: boolean
+        default: false
+
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    if: github.repository != 'decolua/9router'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: master
+          fetch-depth: 0
+          token: ${{ secrets.SYNC_TOKEN }}
+
+      - name: Rebase fork commits onto upstream
+        id: rebase
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add upstream https://github.com/decolua/9router.git
+          git fetch --quiet upstream master
+          if git merge-base --is-ancestor upstream/master HEAD; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "Already on top of upstream/master"
+          else
+            git rebase upstream/master
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+          echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Verify Anthropic API-key fix still applies
+        if: steps.rebase.outputs.changed == 'true' || inputs.force
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts --no-audit --no-fund
+          cd tests && npm install --no-audit --no-fund && npx vitest run unit/anthropic-api-headers.test.js
+
+      - name: Push master and retag
+        if: steps.rebase.outputs.changed == 'true' || inputs.force
+        env:
+          TAG: v${{ steps.rebase.outputs.version }}
+        run: |
+          set -euo pipefail
+          git push --force-with-lease origin HEAD:master
+          git tag -f "$TAG"
+          git push origin ":refs/tags/$TAG" || true
+          git push origin "refs/tags/$TAG"
+          echo "Pushed $TAG -> docker-publish.yml will build ghcr.io/${GITHUB_REPOSITORY,,}:${TAG#v} and :latest"
